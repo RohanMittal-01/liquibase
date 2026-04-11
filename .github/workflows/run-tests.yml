@@ -1,14 +1,11 @@
 
 name: Unit and Integration Tests
 
+# Security: Use minimal workflow-level permissions (principle of least privilege)
+# Job-specific permissions are granted at the job level where needed
+# Reference: https://docs.github.com/en/actions/security-guides/automatic-token-authentication
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  checks: write
-  id-token: write
-  actions: write
-  packages: write
+  contents: read
 
 on:
   workflow_call:
@@ -48,7 +45,7 @@ jobs:
   setup:
     name: setup
     needs: [authorize]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       timestamp: ${{ steps.get-date.outputs.date }}
       latestMergeSha: ${{ steps.get-sha.outputs.latestMergeSha }}
@@ -91,7 +88,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, macos-15-intel, windows-latest ]
+        os: [ ubuntu-24.04, macos-15-intel, windows-latest ]
         java: [ 17, 21, 25 ]
         exclude:
           - os: windows-latest
@@ -109,7 +106,7 @@ jobs:
 
       - name: Built Code Cache
         if: ${{ matrix.java == 17}}
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v5.0.2
         with:
           key: built-code-${{ github.run_number }}-${{ github.run_attempt }}
           path: ./**/target
@@ -160,8 +157,8 @@ jobs:
           find . -name original-*.jar -exec rm {} \;
 
       - name: Upload Artifacts for build.yml
-        if: ${{ matrix.java == 17 && matrix.os == 'ubuntu-22.04'}}
-        uses: actions/upload-artifact@v5
+        if: ${{ matrix.java == 17 && matrix.os == 'ubuntu-24.04'}}
+        uses: actions/upload-artifact@v6
         with:
           name: temp-artifact
           path: |
@@ -169,7 +166,7 @@ jobs:
 
       - name: Archive Test Results
         if: ${{ inputs.archive_test_results == 'true' }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: liquibase-test-results-jdk${{ matrix.java }}
           path: |
@@ -177,16 +174,16 @@ jobs:
             ./**/target/site
 
       - name: Save Jacoco Report for Sonar
-        if: ${{ matrix.java == 17 && matrix.os == 'ubuntu-22.04'}}
-        uses: actions/upload-artifact@v5
+        if: ${{ matrix.java == 17 && matrix.os == 'ubuntu-24.04'}}
+        uses: actions/upload-artifact@v6
         with:
           name: liquibase-jacoco-test-results
           path: |
             ./liquibase-standard/target/jacoco.exec
 
       - name: Archive Modules
-        if: ${{ matrix.java == 17 && matrix.os == 'ubuntu-22.04'}}
-        uses: actions/upload-artifact@v5
+        if: ${{ matrix.java == 17 && matrix.os == 'ubuntu-24.04'}}
+        uses: actions/upload-artifact@v6
         with:
           name: liquibase-modules
           path: |
@@ -197,6 +194,11 @@ jobs:
     uses: liquibase/build-logic/.github/workflows/fossa_ai.yml@main
     if: github.event_name != 'workflow_dispatch'
     secrets: inherit
+    permissions:
+      actions: write
+      pull-requests: write
+      id-token: write
+      contents: read
     with:
       check_snippets: true
       check_ai_generated_code: true
@@ -204,7 +206,7 @@ jobs:
 
   integration-test:
     name: Integration Test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -253,7 +255,7 @@ jobs:
       # getting from build results page. If we remove 0-SNAPSHOT then we will need settings.xml
 
       - name: Restore Built Code Cache
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v5.0.2
         with:
           key: built-code-${{ github.run_number }}-${{ github.run_attempt }}
           path: ./**/target
@@ -263,14 +265,14 @@ jobs:
 
       - name: Archive Test Results
         if: ${{ inputs.archive_test_results == 'true' }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.prepare.outputs.testResultsArtifact }}
           path: |
             ./**/target/surefire-reports
 
       - name: Save Jacoco Report for Sonar
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: liquibase-integration-jacoco-test-results-${{ matrix.testSystem }}
           path: |
@@ -279,6 +281,10 @@ jobs:
   sonar:
     needs: [ build_tests, integration-test ]
     uses: liquibase/build-logic/.github/workflows/sonar-test-scan.yml@main
+    permissions:
+      pull-requests: write
+      id-token: write
+      contents: read
     with:
       thisBranchName: ${{ needs.setup.outputs.thisBranchName }}
       thisSha: ${{ needs.setup.outputs.thisSha }}
@@ -293,4 +299,9 @@ jobs:
   run-build-publish-file:
     needs: [ build_tests,integration-test ]
     uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+      id-token: write
     secrets: inherit
